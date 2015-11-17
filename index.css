@@ -6,7 +6,7 @@
     padding: 0;
 }
 
-.main 
+.main
 {
     padding-top: 70px;
 }
@@ -29,7 +29,7 @@
     top: 0px;
     left: 0px;
     width: 228px;
-    height: 70px; 
+    height: 70px;
     padding: 0px;
     float: none;
 }
@@ -37,4 +37,8 @@
 .endpoints {
     background-color: #F1F1F4;
     padding-left: 92px;
+}
+
+.site-title-link, .site-title-link:visited, .site-title-link:hover, .site-title-link:active {
+  color: #FFF;
 }
