@@ -3,7 +3,7 @@ title: Cablecast API Examples
 email: developers@trms.com
 description: > # this means to ignore newlines until "baseurl:"
   Examples of how to use the Cablecast API.
-baseurl: "/cablecast-api-examples/" # the subpath of your site, e.g. /blog/
+baseurl: "/cablecast-api-examples" # the subpath of your site, e.g. /blog/
 url: "https://trms.github.io" # the base hostname & protocol for your site
 twitter_username: trms
 github_username:  trms
