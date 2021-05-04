@@ -119,10 +119,18 @@ var lookupItemById = function(id, items) {
 <h3>Putting It All Together</h3>
 
 <p>
-The JSBin below shows a working example of the code described above. If you have any problems, please open an <a href="https://github.com/trms/cablecast-api-examples/issues">Issue</a> and let us know.
+The Glitch project below shows a working example of the code described above. If you have any problems, please open an <a href="https://github.com/trms/cablecast-api-examples/issues">Issue</a> and let us know.
 </p>
 
-<a class="jsbin-embed" href="http://jsbin.com/fefopo/embed?html,js,output">JS Bin on jsbin.com</a><script src="http://static.jsbin.com/js/embed.min.js?3.35.3"></script>
+<!-- Copy and Paste Me -->
+<div class="glitch-embed-wrap" style="height: 420px; width: 100%;">
+  <iframe
+    src="https://glitch.com/embed/#!/embed/invented-oil-monday?path=script.js&previewSize=100"
+    title="invented-oil-monday on Glitch"
+    allow="geolocation; microphone; camera; midi; vr; encrypted-media"
+    style="height: 100%; width: 100%; border: 0;">
+  </iframe>
+</div>
 
 <h3>Additional Resources</h3>
 
