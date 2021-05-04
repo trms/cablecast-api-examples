@@ -44,7 +44,7 @@ Our document will need jQuery and Moment.js loaded. We also need a JavaScript fi
 In order to display results for only one channel, we need to tell the Cablecast API what channel we want results for. We do this by providing the <code>channel</code> parameter in the API call. The simplest is to get it from the Address bar when viewing the Schedule in the Cablecast UI. To do this, load the Cablecast Schedule and choose the desired Channel. The Channel Id is in the Address bar after <code>channel=id</code>.
 </p>
 
-![Getting the Channel Id]({{"images/getting-channel-id.png" | prepend: site.baseurl}})
+![Getting the Channel Id]({{"/images/getting-channel-id.png" | prepend: site.baseurl}})
 
 <h3>Loading the Schedule Data</h3>
 
