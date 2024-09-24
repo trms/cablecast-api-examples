@@ -18,15 +18,24 @@ const scriptParams = {
 async function main() {
     const config = await loadNewShowConfig(scriptParams);
 
+    
+    var meetingValue = '63dac4f062d80500339fc121|Regular City Council Meeting 2/1/2023 3:00:34 PM'
+
     // Create a new show
     let newShow = {
         show: {
             title: scriptParams.newShowName,
             cgTitle: scriptParams.newShowName,
             cgExempt: false,
-            comments: 'Created by an API script',
+            comments: 'Created by an API script w/ AgendaLink',
             location: config.locationId,
-            customFields: [], // Placeholder for any custom fields
+            eventDate: new Date().toISOString(),
+            customFields: [
+                {
+                    showField: config.customFields.find(f => f.name === 'AgendaLink Agenda').id,
+                    value: meetingValue
+                }
+            ], // Placeholder for any custom fields
         }
     };
     let showResponse = await cablecastAPIRequest(`/cablecastapi/v1/shows`, 'POST', newShow);

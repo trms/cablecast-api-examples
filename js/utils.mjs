@@ -55,7 +55,18 @@ export async function loadNewShowConfig(params) {
     let devicesResponse = await cablecastAPIRequest(`/cablecastapi/v1/devices`);
     let recordDevice = devicesResponse.devices.find(d => d.name === params.recordDeviceName);
 
+    let showFields = await cablecastAPIRequest(`/cablecastapi/v1/showfields`);
+
+    let customFields = showFields.showFields.map(f => {
+        let fieldDefinition = showFields.fieldDefinitions.find(fd => fd.id == f.fieldDefinition);
+        return {
+            id: f.id,
+            name: fieldDefinition.name,
+        }
+    });
+
     return {
+        customFields,
         locationId: location.id,
         formatId: format.id,
         vodConfigurationId: vodConfig.id,
