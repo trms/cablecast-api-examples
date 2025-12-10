@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { cablecastAPIRequest } from './utils.mjs';
 
 let controlRooms = await cablecastAPIRequest('/cablecastapi/v1/controlrooms');

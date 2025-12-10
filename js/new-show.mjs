@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { cablecastAPIRequest, loadNewShowConfig } from './utils.mjs';
 
 /**

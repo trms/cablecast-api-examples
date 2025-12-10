@@ -1,3 +1,4 @@
+
 const SERVER_BASE_URL = 'https://eng-demo.cablecast.tv';
 const USERNAME = 'admin';
 const PASSWORD = process.env.CABLECAST_PASSWORD ?? 'yourpassword';
@@ -14,7 +15,10 @@ export async function cablecastAPIRequest(endpoint, method = 'GET', body, parseR
     });
 
     if (!response.ok) {
+        console.log(`Error during API request to ${endpoint}:`);
+        console.log(await response.text());
         throw new Error(`Failed to fetch ${endpoint}: ${response.statusText}`);
+
     }
 
     if (parseResponse)
@@ -36,6 +40,10 @@ export async function loadNewShowConfig(params) {
         throw new Error('No formats found');
     }
     let format = formats.formats.find(f => f.name === params.formatName && f.location == location.id);
+    if (!format) {
+        console.log('Requested format not found, using first available format');
+        format = formats.formats[0];
+    }
 
     let vodConfigurations = await cablecastAPIRequest('/cablecastapi/v1/vodconfigurations');
     if (vodConfigurations.vodConfigurations.length === 0) {
@@ -47,19 +55,31 @@ export async function loadNewShowConfig(params) {
     }
 
     let channels = await cablecastAPIRequest(`/cablecastapi/v1/channels`);
+    if (channels.channels.length === 0) {
+        throw new Error('No channels found');
+    }
     let channel = channels.channels.find(c => c.name === params.channelName);
     if (!channel) {
-        throw new Error(`Channel not found: ${params.channelName}`);
+        console.log(`Channel not found: ${params.channelName}, using first available channel`);
+        channel = channels.channels[0];
     }
 
     let devicesResponse = await cablecastAPIRequest(`/cablecastapi/v1/devices`);
     let recordDevice = devicesResponse.devices.find(d => d.name === params.recordDeviceName);
+    if (!recordDevice) {
+        console.log(`Requested Record device not found: ${params.recordDeviceName}`);
+        recordDevice = devicesResponse.devices.find(d => d.primitiveDevice == 5); // 5 is Record Device
+    }
+
+    if (!recordDevice) {
+        console.log("No record device found.");
+    }
 
     return {
         locationId: location.id,
         formatId: format.id,
-        vodConfigurationId: vodConfig.id,
-        channelId: channel.id,
-        recordDeviceId: recordDevice.id
+        vodConfigurationId: vodConfig ? vodConfig.id : undefined,
+        channelId: channel ? channel.id : undefined,
+        recordDeviceId: recordDevice ? recordDevice.id : undefined
     };
 }
