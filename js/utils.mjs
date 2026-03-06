@@ -1,7 +1,7 @@
 
-const SERVER_BASE_URL = 'https://eng-demo.cablecast.tv';
-const USERNAME = 'admin';
-const PASSWORD = process.env.CABLECAST_PASSWORD ?? 'yourpassword';
+export const SERVER_BASE_URL = 'https://eng-demo.cablecast.tv';
+export const USERNAME = 'admin';
+export const PASSWORD = process.env.CABLECAST_PASSWORD ?? 'yourpassword';
 
 export async function cablecastAPIRequest(endpoint, method = 'GET', body, parseResponse = true) {
     let response = await fetch(`${SERVER_BASE_URL}${endpoint}`, {
