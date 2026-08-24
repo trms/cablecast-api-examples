@@ -84,7 +84,10 @@ function cablecast_get_showcase_event_shows() {
 	$response = wp_remote_get( $url, array( 'timeout' => 5 ) );
 
 	if ( is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) ) {
-		// Non-200 means the feed could not be read; fail soft so the page renders.
+		// The feed could not be read; fail soft so the page renders. Cache the empty
+		// result for the same short window so an outage does not turn every page view
+		// into another API call.
+		set_transient( $cache_key, array(), 15 );
 		return array();
 	}
 
@@ -117,8 +120,9 @@ function cablecast_live_events_shortcode() {
 	}
 
 	// thumbnailUrl is a path relative to the Cablecast host. Strip whichever API base
-	// path is configured — /cablecastapi on self-hosted, /api on Reflect+.
-	$host = preg_replace( '#/(cablecastapi|api)$#', '', CABLECAST_API );
+	// path is configured — /cablecastapi on self-hosted, /api on Reflect+ — tolerating a
+	// trailing slash in the configured value.
+	$host = preg_replace( '#/(cablecastapi|api)$#', '', rtrim( CABLECAST_API, '/' ) );
 	$out  = '<ul class="cablecast-events">';
 
 	// Tag each row with its liveness from the bucket it was sorted into above, rather
