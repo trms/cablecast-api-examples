@@ -25,6 +25,7 @@ already resolved into a show with a title, thumbnail and playback URL:
       "showId": 1187,
       "title": "City Council Meeting",
       "thumbnailUrl": "/cablecastapi/dynamicthumbnails/8821",
+      "showcaseEventStatus": "live",
       "vodUrl": "https://vod.example.org/showcase-2/1187-showcase-event-42/event.m3u8",
       "isLive": true,
       "scheduleStartTime": "2026-08-19T18:00:00-04:00",
@@ -43,24 +44,31 @@ a Reflect+ hosted channel the base path is `/api` instead of `/cablecastapi`
 > Prefer `publicsitedata` for any third-party integration. It is the one showcase
 > feed available on both self-hosted Cablecast and Reflect+ hosted channels.
 
-## Deriving status
+## Event status
 
-`publicsitedata` does not give you a single `status` string. You compute one
-from `isLive`, `scheduleStartTime`, and `liveBridgeEventStatus`. The important
-rule: an event is only truly ready to play once the stream is confirmed running —
-don't mount a player just because the scheduled start time has passed, or you'll
-hit a manifest that 404s.
+Each event carries a server-derived **`showcaseEventStatus`** — read that field
+rather than working the status out yourself. The server already applies the
+"is it really live / has the encoder come up" rules, and both self-hosted
+Cablecast and Reflect+ emit the same values, so you don't have to reimplement any
+of it.
 
-[`event-status.mjs`](./event-status.mjs) implements exactly the logic the
-Internet Channel uses, returning `live | starting_soon | upcoming | vod`. The
-other examples reuse it (and `wordpress.php` ports it to PHP).
+| `showcaseEventStatus` | Meaning | Play `vodUrl`? |
+|-----------------------|---------|----------------|
+| `live` | Streaming now, and confirmed ready. `vodUrl` is the live EVENT playlist. | Yes |
+| `upcoming` | Scheduled, not streaming yet. Use `scheduleStartTime` for a countdown or a "starting soon" treatment. | No — keep polling |
+| `vod` | The event is over. | Only if a recording/VOD exists |
 
-| status | Meaning | Play `vodUrl`? |
-|--------|---------|----------------|
-| `live` | Streaming now. `vodUrl` is the live EVENT playlist. | Yes |
-| `starting_soon` | Within 15 min of start, or started but the encoder isn't up yet. | No — keep polling |
-| `upcoming` | More than 15 min out. | No |
-| `vod` | Over, or no event pending. | Only if a recording/VOD exists |
+`showcaseEventStatus` is an **open enum**: only `live`/`upcoming`/`vod` are sent
+today, but `canceled` and `error` are reserved and may appear in future. Handle
+any value you don't recognise defensively — treat it as **not-live** (don't mount
+a player), so a new status can never break your integration.
+
+[`event-status.mjs`](./event-status.mjs) reads `showcaseEventStatus` and adds the
+client-side `starting_soon` refinement (the near/far split, from
+`scheduleStartTime`), returning `live | starting_soon | upcoming | vod`. It also
+falls back to deriving the status from `isLive`/`liveBridgeEventStatus` for older
+servers that don't send the field yet, so it's safe against any Cablecast
+version. The other examples reuse it (and `wordpress.php` ports it to PHP).
 
 ## Files
 

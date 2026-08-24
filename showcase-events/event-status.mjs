@@ -1,11 +1,13 @@
-// Derives the display status of a Showcase Event from a `showcaseEventShows`
+// Resolves the display status of a Showcase Event from a `showcaseEventShows`
 // entry returned by `GET /cablecastapi/publicsitedata`.
 //
-// This mirrors the logic the Cablecast Internet Channel itself uses, so a
-// third-party site built on `publicsitedata` behaves identically to a hosted
-// channel (including Reflect+). `publicsitedata` does not hand you a single
-// `status` string — you compute it from `isLive`, `scheduleStartTime`, and
-// `liveBridgeEventStatus`, which is exactly what this helper does.
+// Prefer the server-derived `showcaseEventStatus` field: the platform already
+// applies the "is it really live / has the encoder come up" rules, and both
+// self-hosted Cablecast and Reflect+ hosted channels emit the same values, so a
+// third-party site behaves identically to a hosted channel. This helper reads
+// that field and adds only the cosmetic near/far "starting soon" split, which is
+// a client-side choice. For older servers that predate the field it falls back
+// to deriving the status from `isLive`/`scheduleStartTime`/`liveBridgeEventStatus`.
 
 export const STARTING_SOON_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -16,6 +18,41 @@ export const STARTING_SOON_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
  * @returns {"live"|"starting_soon"|"upcoming"|"vod"}
  */
 export function getEventStatus(show, now = Date.now()) {
+  // `showcaseEventStatus` is an OPEN enum: "live" | "upcoming" | "vod" today,
+  // with "canceled"/"error" reserved for future use. Handle unrecognised values
+  // defensively — never assume an unknown value means live.
+  const serverStatus = show.showcaseEventStatus;
+  if (serverStatus) {
+    if (serverStatus === "live") return "live";
+    if (serverStatus === "upcoming") return refineUpcoming(show, now);
+    // "vod", plus any reserved/unknown value: treat as not-live.
+    return "vod";
+  }
+
+  return deriveEventStatus(show, now);
+}
+
+/**
+ * Turns the server's `upcoming` into the near/far split the UI wants. The server
+ * only ever sends `upcoming`; whether to show a "starting soon" treatment is a
+ * client decision made here from `scheduleStartTime`.
+ */
+function refineUpcoming(show, now) {
+  if (show.scheduleStartTime) {
+    const startTime = new Date(show.scheduleStartTime).getTime();
+    if (!Number.isNaN(startTime) && startTime - now <= STARTING_SOON_THRESHOLD_MS) {
+      return "starting_soon";
+    }
+  }
+  return "upcoming";
+}
+
+/**
+ * Fallback for older Cablecast servers that don't send `showcaseEventStatus`
+ * yet. Mirrors the logic the Internet Channel used before the field existed.
+ * Once every deployment sends the field, this can be deleted.
+ */
+export function deriveEventStatus(show, now = Date.now()) {
   const bridgeStatus = show.liveBridgeEventStatus?.toLowerCase() ?? null;
 
   // How aggressively we trust `isLive` to mean "ready to play" depends on the
