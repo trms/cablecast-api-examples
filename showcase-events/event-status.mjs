@@ -41,8 +41,18 @@ export function getEventStatus(show, now = Date.now()) {
 function refineUpcoming(show, now) {
   if (show.scheduleStartTime) {
     const startTime = new Date(show.scheduleStartTime).getTime();
-    if (!Number.isNaN(startTime) && startTime - now <= STARTING_SOON_THRESHOLD_MS) {
-      return "starting_soon";
+    if (!Number.isNaN(startTime)) {
+      // "Starting soon" is a window around the scheduled start: within the threshold
+      // before it, or just after it (the server can still report `upcoming` briefly
+      // past the start). A start far in the past is not "soon", so leave it as plain
+      // `upcoming` rather than showing "starting soon" indefinitely.
+      const untilStart = startTime - now;
+      if (
+        untilStart <= STARTING_SOON_THRESHOLD_MS &&
+        untilStart >= -STARTING_SOON_THRESHOLD_MS
+      ) {
+        return "starting_soon";
+      }
     }
   }
   return "upcoming";

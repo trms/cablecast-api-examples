@@ -74,18 +74,24 @@
           return;
         }
 
-        // Nothing on right now. Surface the next upcoming event, if any.
+        // Nothing on right now. Surface the next upcoming event, if any. Guard against
+        // a missing/invalid scheduleStartTime so the sort never compares NaN (which
+        // leaves order undefined) and we never render "Invalid Date".
+        const startMs = (s) => {
+          const t = new Date(s.scheduleStartTime).getTime();
+          return Number.isNaN(t) ? Infinity : t;
+        };
         const upcoming = shows
           .filter((s) => ["starting_soon", "upcoming"].includes(getEventStatus(s)))
-          .sort(
-            (a, b) =>
-              new Date(a.scheduleStartTime) - new Date(b.scheduleStartTime)
-          )[0];
+          .sort((a, b) => startMs(a) - startMs(b))[0];
 
+        const upcomingStart = upcoming ? startMs(upcoming) : Infinity;
         statusEl.textContent = upcoming
-          ? `Next up: ${upcoming.title} at ${new Date(
-              upcoming.scheduleStartTime
-            ).toLocaleString()}`
+          ? Number.isFinite(upcomingStart)
+            ? `Next up: ${upcoming.title} at ${new Date(
+                upcomingStart
+              ).toLocaleString()}`
+            : `Next up: ${upcoming.title}`
           : "No live events scheduled right now.";
 
         setTimeout(tick, POLL_MS);

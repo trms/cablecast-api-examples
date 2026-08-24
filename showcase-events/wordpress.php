@@ -14,10 +14,17 @@
  * channel the base path is /api instead of /cablecastapi; the payload is the same.
  */
 
-define( 'CABLECAST_API', 'https://cablecast.example.org/cablecastapi' );
-define( 'CABLECAST_SITE_ID', 1 );
-
-const CABLECAST_STARTING_SOON_THRESHOLD = 15 * 60; // seconds
+// Guarded so pasting this into functions.php alongside other config (or including
+// it more than once) does not raise "constant already defined" warnings.
+if ( ! defined( 'CABLECAST_API' ) ) {
+	define( 'CABLECAST_API', 'https://cablecast.example.org/cablecastapi' );
+}
+if ( ! defined( 'CABLECAST_SITE_ID' ) ) {
+	define( 'CABLECAST_SITE_ID', 1 );
+}
+if ( ! defined( 'CABLECAST_STARTING_SOON_THRESHOLD' ) ) {
+	define( 'CABLECAST_STARTING_SOON_THRESHOLD', 15 * 60 ); // seconds
+}
 
 /**
  * Resolve the display status of one showcaseEventShows entry.
@@ -40,8 +47,15 @@ function cablecast_event_status( $show, $now = null ) {
 		case 'upcoming':
 			if ( ! empty( $show['scheduleStartTime'] ) ) {
 				$start = strtotime( $show['scheduleStartTime'] );
-				if ( false !== $start && ( $start - $now ) <= CABLECAST_STARTING_SOON_THRESHOLD ) {
-					return 'starting_soon';
+				if ( false !== $start ) {
+					// "Starting soon" is a window around the scheduled start: within the
+					// threshold before it, or just after it. A start far in the past is
+					// not "soon", so leave it as plain "upcoming".
+					$until_start = $start - $now;
+					if ( $until_start <= CABLECAST_STARTING_SOON_THRESHOLD
+						&& $until_start >= -CABLECAST_STARTING_SOON_THRESHOLD ) {
+						return 'starting_soon';
+					}
 				}
 			}
 			return 'upcoming';
@@ -102,15 +116,19 @@ function cablecast_live_events_shortcode() {
 		return '<p>No live events scheduled right now.</p>';
 	}
 
-	// thumbnailUrl is a path relative to the Cablecast host.
-	$host = preg_replace( '#/cablecastapi$#', '', CABLECAST_API );
+	// thumbnailUrl is a path relative to the Cablecast host. Strip whichever API base
+	// path is configured — /cablecastapi on self-hosted, /api on Reflect+.
+	$host = preg_replace( '#/(cablecastapi|api)$#', '', CABLECAST_API );
 	$out  = '<ul class="cablecast-events">';
 
 	foreach ( array_merge( $live, $upcoming ) as $show ) {
 		$is_live = ! empty( $show['isLive'] ) && cablecast_event_status( $show ) === 'live';
-		$when    = $is_live
+		// scheduleStartTime can be missing or unparseable; guard so a bad entry does not
+		// print the Unix epoch (or emit a notice) as the start time.
+		$start = ! empty( $show['scheduleStartTime'] ) ? strtotime( $show['scheduleStartTime'] ) : false;
+		$when  = $is_live
 			? 'Live now'
-			: 'Starts ' . date_i18n( 'M j, g:i a', strtotime( $show['scheduleStartTime'] ) );
+			: ( false !== $start ? 'Starts ' . date_i18n( 'M j, g:i a', $start ) : 'Upcoming' );
 
 		$out .= '<li>';
 		if ( ! empty( $show['thumbnailUrl'] ) ) {
