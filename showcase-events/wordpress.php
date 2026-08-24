@@ -79,7 +79,8 @@ function cablecast_get_showcase_event_shows() {
 
 	$url      = add_query_arg(
 		array( 'site' => CABLECAST_SITE_ID ),
-		CABLECAST_API . '/publicsitedata'
+		// rtrim so a configured trailing slash doesn't produce a double slash in the path.
+		rtrim( CABLECAST_API, '/' ) . '/publicsitedata'
 	);
 	$response = wp_remote_get( $url, array( 'timeout' => 5 ) );
 
