@@ -121,8 +121,19 @@ function cablecast_live_events_shortcode() {
 	$host = preg_replace( '#/(cablecastapi|api)$#', '', CABLECAST_API );
 	$out  = '<ul class="cablecast-events">';
 
-	foreach ( array_merge( $live, $upcoming ) as $show ) {
-		$is_live = ! empty( $show['isLive'] ) && cablecast_event_status( $show ) === 'live';
+	// Tag each row with its liveness from the bucket it was sorted into above, rather
+	// than re-deriving it (or second-guessing it against isLive) here. cablecast_event_status
+	// is the single source of truth, so a live event stays live even if isLive is absent.
+	$rows = array();
+	foreach ( $live as $show ) {
+		$rows[] = array( $show, true );
+	}
+	foreach ( $upcoming as $show ) {
+		$rows[] = array( $show, false );
+	}
+
+	foreach ( $rows as $row ) {
+		list( $show, $is_live ) = $row;
 		// scheduleStartTime can be missing or unparseable; guard so a bad entry does not
 		// print the Unix epoch (or emit a notice) as the start time.
 		$start = ! empty( $show['scheduleStartTime'] ) ? strtotime( $show['scheduleStartTime'] ) : false;
