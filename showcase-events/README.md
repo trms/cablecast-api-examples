@@ -58,17 +58,22 @@ of it.
 | `upcoming` | Scheduled, not streaming yet. Use `scheduleStartTime` for a countdown or a "starting soon" treatment. | No — keep polling |
 | `vod` | The event is over. | Only if a recording/VOD exists |
 
-`showcaseEventStatus` is an **open enum**: only `live`/`upcoming`/`vod` are sent
-today, but `canceled` and `error` are reserved and may appear in future. Handle
-any value you don't recognise defensively — treat it as **not-live** (don't mount
-a player), so a new status can never break your integration.
+`showcaseEventStatus` is an **open enum** — plan for values beyond the three above.
+Reserved for future use:
+
+| Value | Meaning (once emitted) | What to do |
+|-------|------------------------|------------|
+| `canceled` | The event was called off and will not air (cancelled before start, or ended without producing a recording). | Terminal, not-live, nothing to play — stop polling; hide the listing or show a "cancelled" note. |
+| `error` | The event failed to stream (an encoder or platform error prevented it). | Terminal, not-live, no reliable playback — stop polling; hide the listing or show an "unavailable" note. |
+
+Neither is emitted today. Treat **any** value you don't recognise defensively —
+as **not-live** (don't mount a player) — so a new status can never break your
+integration.
 
 [`event-status.mjs`](./event-status.mjs) reads `showcaseEventStatus` and adds the
 client-side `starting_soon` refinement (the near/far split, from
-`scheduleStartTime`), returning `live | starting_soon | upcoming | vod`. It also
-falls back to deriving the status from `isLive`/`liveBridgeEventStatus` for older
-servers that don't send the field yet, so it's safe against any Cablecast
-version. The other examples reuse it (and `wordpress.php` ports it to PHP).
+`scheduleStartTime`), returning `live | starting_soon | upcoming | vod`. The other
+examples reuse it (and `wordpress.php` ports it to PHP).
 
 ## Files
 

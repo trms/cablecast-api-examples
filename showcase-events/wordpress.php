@@ -22,23 +22,22 @@ const CABLECAST_STARTING_SOON_THRESHOLD = 15 * 60; // seconds
 /**
  * Resolve the display status of one showcaseEventShows entry.
  *
- * Prefers the server-derived `showcaseEventStatus` — an OPEN enum that is
- * "live" | "upcoming" | "vod" today, with "canceled"/"error" reserved. Unknown
- * values are treated defensively as not-live. Only the near/far "starting soon"
- * split is decided here, from scheduleStartTime. Falls back to deriving the
- * status for older servers that do not send the field. Mirrors event-status.mjs.
+ * Reads the server-derived `showcaseEventStatus` — an OPEN enum. Emitted today:
+ * "live" | "upcoming" | "vod". Reserved for future use: "canceled" (event called
+ * off, will not air) and "error" (event failed to stream) — both terminal,
+ * not-live, nothing to play. Unrecognised values are treated defensively as
+ * not-live. Only the near/far "starting soon" split is decided here, from
+ * scheduleStartTime. Mirrors event-status.mjs.
  *
  * @return string one of live|starting_soon|upcoming|vod
  */
 function cablecast_event_status( $show, $now = null ) {
 	$now = $now ?? time();
 
-	$server_status = $show['showcaseEventStatus'] ?? null;
-	if ( ! empty( $server_status ) ) {
-		if ( 'live' === $server_status ) {
+	switch ( $show['showcaseEventStatus'] ?? null ) {
+		case 'live':
 			return 'live';
-		}
-		if ( 'upcoming' === $server_status ) {
+		case 'upcoming':
 			if ( ! empty( $show['scheduleStartTime'] ) ) {
 				$start = strtotime( $show['scheduleStartTime'] );
 				if ( false !== $start && ( $start - $now ) <= CABLECAST_STARTING_SOON_THRESHOLD ) {
@@ -46,56 +45,10 @@ function cablecast_event_status( $show, $now = null ) {
 				}
 			}
 			return 'upcoming';
-		}
-		// "vod", plus any reserved/unknown value: treat as not-live.
-		return 'vod';
+		default:
+			// "vod", "canceled", "error", or anything unrecognised: not live.
+			return 'vod';
 	}
-
-	return cablecast_derive_event_status( $show, $now );
-}
-
-/**
- * Fallback for older servers with no `showcaseEventStatus`. See event-status.mjs
- * for the reasoning behind each branch.
- *
- * @return string one of live|starting_soon|upcoming|vod
- */
-function cablecast_derive_event_status( $show, $now = null ) {
-	$now           = $now ?? time();
-	$bridge_status = isset( $show['liveBridgeEventStatus'] )
-		? strtolower( (string) $show['liveBridgeEventStatus'] )
-		: null;
-
-	$event_url = ( $show['vodUrl'] ?? '' ) . ' ' . ( $show['liveStreamUrl'] ?? '' );
-	$is_livebridge_stream =
-		preg_match( '#/livebridge#i', $event_url ) && ! preg_match( '#/showcase#i', $event_url );
-
-	if ( ! empty( $show['isLive'] ) && ! $is_livebridge_stream ) {
-		return 'live';
-	}
-	if ( 'active' === $bridge_status ) {
-		return 'live';
-	}
-
-	if ( ! empty( $show['scheduleStartTime'] ) ) {
-		$start = strtotime( $show['scheduleStartTime'] );
-		if ( false !== $start ) {
-			if ( $start > $now ) {
-				return ( $start - $now ) <= CABLECAST_STARTING_SOON_THRESHOLD
-					? 'starting_soon'
-					: 'upcoming';
-			}
-			if ( 'scheduled' === $bridge_status || 'starting' === $bridge_status ) {
-				return 'starting_soon';
-			}
-			if ( ( $now - $start ) <= CABLECAST_STARTING_SOON_THRESHOLD ) {
-				return 'starting_soon';
-			}
-		}
-		return 'vod';
-	}
-
-	return 'vod';
 }
 
 /**
