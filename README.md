@@ -34,3 +34,14 @@ Lists all of the Control Rooms and Macros for a system. Also fires a named `Star
 
 Usage: `node macros.mjs`
 
+## Showcase Events (Internet Channel)
+
+See [`showcase-events/`](./showcase-events) for building a live-events feature —
+"what's live now / coming up" listings and players — on your own site.
+
+These read live and upcoming events from `GET /cablecastapi/publicsitedata`
+(`showcaseEventShows`), which is read-only, needs no authentication, and is the
+one showcase feed available on both self-hosted Cablecast and Reflect+ hosted
+channels. Includes a browser HLS player, a WordPress shortcode, a no-code iframe
+embed, and a shared status helper. See [`showcase-events/README.md`](./showcase-events/README.md).
+

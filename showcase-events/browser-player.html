@@ -1,0 +1,111 @@
+<!doctype html>
+<!--
+  Minimal live-events player built on `GET /cablecastapi/publicsitedata`.
+
+  It reads the site's `showcaseEventShows`, finds one that is live, and mounts an
+  HLS player against its `vodUrl` (which carries the live EVENT playlist while an
+  event is live). While nothing is live it keeps polling on the same 15-second
+  cadence the Cablecast Internet Channel uses.
+
+  `publicsitedata` is read-only, needs no authentication, and sends open CORS
+  headers, so this works straight from the browser. Serve this file over http(s)
+  (not file://) so the ES-module import and the cross-origin fetch both work.
+
+  Set API_BASE and SITE_ID below for your system:
+    - Self-hosted Cablecast: https://your-server.example.org/cablecastapi
+    - Reflect+ hosted:       your Reflect+ channel origin + /api  (path is /api,
+                             not /cablecastapi; the payload shape is identical)
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cablecast Live Events</title>
+    <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+    <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; }
+      #status { margin-bottom: 1rem; color: #444; }
+      .video-js { width: 100%; max-width: 800px; aspect-ratio: 16 / 9; height: auto; }
+    </style>
+  </head>
+  <body>
+    <p id="status">Checking for live events…</p>
+    <video id="player" class="video-js" controls playsinline poster=""></video>
+
+    <script type="module">
+      import { getEventStatus } from "./event-status.mjs";
+
+      // ---- configure for your system -------------------------------------
+      const API_BASE = "https://cablecast.example.org/cablecastapi";
+      const SITE_ID = 1;
+      const POLL_MS = 15000; // matches the 15s publicsitedata cache
+      // --------------------------------------------------------------------
+
+      const statusEl = document.getElementById("status");
+      let player = null;
+
+      // `thumbnailUrl` is a path relative to the Cablecast host, so prefix it
+      // with the origin of API_BASE.
+      const apiOrigin = new URL(API_BASE).origin;
+      const absolute = (path) =>
+        path ? (path.startsWith("http") ? path : apiOrigin + path) : "";
+
+      async function tick() {
+        let config;
+        try {
+          const res = await fetch(`${API_BASE}/publicsitedata?site=${SITE_ID}`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          config = await res.json();
+        } catch (err) {
+          // Fail soft: leave any running player alone and try again shortly.
+          statusEl.textContent = "Could not reach the Cablecast API. Retrying…";
+          return setTimeout(tick, POLL_MS);
+        }
+
+        const shows = config.showcaseEventShows ?? [];
+        const live = shows.find((s) => getEventStatus(s) === "live");
+
+        if (live) {
+          mount(live);
+          // Stop polling once mounted: the HLS manifest keeps the stream current
+          // on its own, and re-reading a cached response can briefly flip the
+          // status and tear the player down.
+          return;
+        }
+
+        // Nothing on right now. Surface the next upcoming event, if any.
+        const upcoming = shows
+          .filter((s) => ["starting_soon", "upcoming"].includes(getEventStatus(s)))
+          .sort(
+            (a, b) =>
+              new Date(a.scheduleStartTime) - new Date(b.scheduleStartTime)
+          )[0];
+
+        statusEl.textContent = upcoming
+          ? `Next up: ${upcoming.title} at ${new Date(
+              upcoming.scheduleStartTime
+            ).toLocaleString()}`
+          : "No live events scheduled right now.";
+
+        setTimeout(tick, POLL_MS);
+      }
+
+      function mount(show) {
+        statusEl.textContent = `Live now: ${show.title}`;
+        const el = document.getElementById("player");
+        el.poster = absolute(show.thumbnailUrl);
+
+        // `vodUrl` carries the live EVENT playlist while the event is live, so
+        // late joiners can scrub back to the start. Captions and translated
+        // subtitle tracks ride inside the manifest — no separate fetch needed.
+        player = videojs("player", {
+          liveui: true,
+          sources: [{ src: show.vodUrl, type: "application/x-mpegURL" }],
+        });
+      }
+
+      tick();
+    </script>
+  </body>
+</html>
