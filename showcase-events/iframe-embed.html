@@ -1,0 +1,33 @@
+<!doctype html>
+<!--
+  No-code option: embed the Internet Channel show page in an iframe.
+
+  If you would rather not build a player, iframe the show page. It already
+  handles the whole event lifecycle for you — the poster while an event is
+  upcoming, the live player when it starts, and the recording afterwards — and
+  needs no JavaScript.
+
+  You need the Show ID, which is the `showId` field on a showcaseEventShows
+  entry from `GET /cablecastapi/publicsitedata`. Point the iframe at that show on
+  your channel's public site and keep a 16:9 aspect ratio. See the Cablecast
+  support article "Embedding Video on Third-party Websites" for sizing details.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cablecast Show Embed</title>
+  </head>
+  <body>
+    <!-- Replace the host with your channel's public site and 1187 with a showId. -->
+    <iframe
+      src="https://yourtown.cablecast.tv/show/1187"
+      width="800"
+      height="450"
+      frameborder="0"
+      allow="autoplay; fullscreen"
+      allowfullscreen
+      title="City Council Meeting"
+    ></iframe>
+  </body>
+</html>

@@ -1,0 +1,248 @@
+<!doctype html>
+<!--
+  Showcase-events gallery built on `GET /cablecastapi/publicsitedata`.
+
+  This is the landing page: it reads the site's `showcaseEventShows` and renders
+  them as a horizontally-scrolling row of cards — what's live now, what's
+  starting soon, and what's coming up — much like the "Live Events" row on a
+  Cablecast Internet Channel. Clicking a card opens `browser-player.html?show=<id>`,
+  which polls that one event and mounts a player when it goes live.
+
+  It re-fetches on the same 15-second cadence the Internet Channel uses, so a card
+  flips to "Live" on its own while the page is open.
+
+  `publicsitedata` is read-only, needs no authentication, and sends open CORS
+  headers, so this works straight from the browser. Serve this file over http(s)
+  (not file://) so the ES-module imports and the cross-origin fetch both work.
+
+  Configure your API host once in config.mjs (shared with browser-player.html).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cablecast Showcase Events</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --card: #1b1e26;
+        --text: #f4f5f7;
+        --muted: #9aa0ad;
+        --live: #e5322d;
+        --soon: #f5a623;
+        --accent: #4c8dff;
+      }
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+      }
+      header {
+        padding: 2rem 2rem 0.5rem;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 1.4rem;
+      }
+      header p {
+        margin: 0.25rem 0 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      /* The Netflix-style row: horizontal scroll, cards side by side. */
+      .row {
+        display: flex;
+        gap: 1rem;
+        overflow-x: auto;
+        padding: 1.5rem 2rem 2rem;
+        scroll-snap-type: x proximity;
+      }
+      .card {
+        flex: 0 0 260px;
+        scroll-snap-align: start;
+        background: var(--card);
+        border-radius: 10px;
+        overflow: hidden;
+        text-decoration: none;
+        color: inherit;
+        transition: transform 0.15s ease;
+      }
+      .card:hover,
+      .card:focus-visible {
+        transform: scale(1.04);
+        outline: none;
+      }
+      .thumb {
+        position: relative;
+        aspect-ratio: 16 / 9;
+        background: #2a2e38 center / cover no-repeat;
+      }
+      .badge {
+        position: absolute;
+        top: 0.5rem;
+        left: 0.5rem;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.65);
+        color: #fff;
+      }
+      .badge.live { background: var(--live); }
+      .badge.soon { background: var(--soon); color: #1b1e26; }
+      .meta { padding: 0.75rem 0.85rem 0.9rem; }
+      .meta .title {
+        font-weight: 600;
+        font-size: 0.98rem;
+        line-height: 1.25;
+        /* Keep titles to two lines so cards stay even height. */
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .meta .when {
+        margin-top: 0.35rem;
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+      .empty {
+        padding: 1.5rem 2rem 3rem;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 id="gallery-title">Live Events</h1>
+      <p id="gallery-sub">Loading…</p>
+    </header>
+    <div class="row" id="row" hidden></div>
+    <p class="empty" id="empty" hidden>No showcase events right now.</p>
+
+    <script type="module">
+      import { publicSiteDataUrl, POLL_MS, absolute } from "./config.mjs";
+      import { getEventStatus } from "./event-status.mjs";
+
+      const titleEl = document.getElementById("gallery-title");
+      const subEl = document.getElementById("gallery-sub");
+      const rowEl = document.getElementById("row");
+      const emptyEl = document.getElementById("empty");
+
+      // Sort order for the row: live first, then starting soon, then upcoming,
+      // then anything else (ended/recording).
+      const RANK = { live: 0, starting_soon: 1, upcoming: 2, vod: 3 };
+
+      const startMs = (s) => {
+        const t = new Date(s.scheduleStartTime).getTime();
+        return Number.isNaN(t) ? Infinity : t;
+      };
+
+      // Human-friendly line under each title, based on the resolved status.
+      function whenLabel(show, status) {
+        const start = startMs(show);
+        const at = Number.isFinite(start)
+          ? new Date(start).toLocaleString([], {
+              weekday: "short",
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            })
+          : null;
+        switch (status) {
+          case "live":
+            return "Live now";
+          case "starting_soon":
+            return at ? `Starting soon · ${at}` : "Starting soon";
+          case "upcoming":
+            return at ? `Starts ${at}` : "Upcoming";
+          default:
+            return "Recording";
+        }
+      }
+
+      function card(show, status) {
+        const a = document.createElement("a");
+        a.className = "card";
+        a.href = `./browser-player.html?show=${encodeURIComponent(show.showId)}`;
+
+        const thumb = document.createElement("div");
+        thumb.className = "thumb";
+        const thumbUrl = absolute(show.thumbnailUrl);
+        if (thumbUrl) thumb.style.backgroundImage = `url("${thumbUrl}")`;
+
+        if (status === "live" || status === "starting_soon") {
+          const badge = document.createElement("span");
+          badge.className = `badge ${status === "live" ? "live" : "soon"}`;
+          badge.textContent = status === "live" ? "● Live" : "Soon";
+          thumb.appendChild(badge);
+        }
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        // textContent (not innerHTML) so a show title can never inject markup.
+        const title = document.createElement("div");
+        title.className = "title";
+        title.textContent = show.title ?? "Untitled event";
+        const when = document.createElement("div");
+        when.className = "when";
+        when.textContent = whenLabel(show, status);
+        meta.append(title, when);
+
+        a.append(thumb, meta);
+        return a;
+      }
+
+      function render(config) {
+        titleEl.textContent = config.liveGalleryTitle || "Live Events";
+
+        const shows = (config.showcaseEventShows ?? [])
+          .map((s) => ({ show: s, status: getEventStatus(s) }))
+          .sort(
+            (a, b) =>
+              (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9) ||
+              startMs(a.show) - startMs(b.show)
+          );
+
+        if (shows.length === 0) {
+          rowEl.hidden = true;
+          emptyEl.hidden = false;
+          subEl.textContent = "";
+          return;
+        }
+
+        const liveCount = shows.filter((s) => s.status === "live").length;
+        subEl.textContent = liveCount
+          ? `${liveCount} live now · ${shows.length} total`
+          : `${shows.length} event${shows.length === 1 ? "" : "s"}`;
+
+        // Preserve horizontal scroll across the 15s refresh so re-rendering
+        // doesn't yank the row back to the start under the viewer.
+        const scrollLeft = rowEl.scrollLeft;
+        rowEl.replaceChildren(...shows.map(({ show, status }) => card(show, status)));
+        rowEl.scrollLeft = scrollLeft;
+
+        emptyEl.hidden = true;
+        rowEl.hidden = false;
+      }
+
+      async function tick() {
+        try {
+          const res = await fetch(publicSiteDataUrl());
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          render(await res.json());
+        } catch (err) {
+          // Fail soft: keep whatever is on screen and try again shortly.
+          if (rowEl.hidden) subEl.textContent = "Could not reach the Cablecast API. Retrying…";
+        }
+        setTimeout(tick, POLL_MS);
+      }
+
+      tick();
+    </script>
+  </body>
+</html>
