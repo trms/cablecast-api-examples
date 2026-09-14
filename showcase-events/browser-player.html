@@ -1,11 +1,14 @@
 <!doctype html>
 <!--
-  Minimal live-events player built on `GET /cablecastapi/publicsitedata`.
+  Single-event live player built on `GET /cablecastapi/publicsitedata`.
 
-  It reads the site's `showcaseEventShows`, finds one that is live, and mounts an
-  HLS player against its `vodUrl` (which carries the live EVENT playlist while an
-  event is live). While nothing is live it keeps polling on the same 15-second
-  cadence the Cablecast Internet Channel uses.
+  Opened as `browser-player.html?show=<showId>` from events-gallery.html, it polls
+  that one showcase event and mounts an HLS player against its `vodUrl` (which
+  carries the live EVENT playlist while the event is live). Until the event is
+  live it shows a "starting soon" / "starts at…" state and keeps polling on the
+  same 15-second cadence the Cablecast Internet Channel uses. With no `?show=`
+  param it falls back to the first event that is currently live, so the file still
+  works on its own.
 
   An event can report `live` a beat before its encoder actually publishes
   segments, and mounting video.js against a manifest that 404s gives a terminal
@@ -17,18 +20,15 @@
 
   `publicsitedata` is read-only, needs no authentication, and sends open CORS
   headers, so this works straight from the browser. Serve this file over http(s)
-  (not file://) so the ES-module import and the cross-origin fetch both work.
+  (not file://) so the ES-module imports and the cross-origin fetch both work.
 
-  Set API_BASE and SITE_ID below for your system:
-    - Self-hosted Cablecast: https://your-server.example.org/cablecastapi
-    - Reflect+ hosted:       your Reflect+ channel origin + /api  (path is /api,
-                             not /cablecastapi; the payload shape is identical)
+  Configure your API host once in config.mjs (shared with events-gallery.html).
 -->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Cablecast Live Events</title>
+    <title>Cablecast Live Event</title>
     <!--
       This example loads video.js from a public CDN to stay copy-paste simple. For
       production, self-host these assets or add Subresource Integrity (integrity + crossorigin)
@@ -38,36 +38,32 @@
     <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
     <style>
       body { font-family: system-ui, sans-serif; margin: 2rem; }
+      .back { display: inline-block; margin-bottom: 1rem; color: #4c8dff; text-decoration: none; }
       #status { margin-bottom: 1rem; color: #444; }
       .video-js { width: 100%; max-width: 800px; aspect-ratio: 16 / 9; height: auto; }
     </style>
   </head>
   <body>
-    <p id="status">Checking for live events…</p>
+    <a class="back" href="./events-gallery.html">← All events</a>
+    <p id="status">Loading event…</p>
     <video id="player" class="video-js" controls playsinline poster=""></video>
 
     <script type="module">
+      import { publicSiteDataUrl, POLL_MS, absolute } from "./config.mjs";
       import { getEventStatus } from "./event-status.mjs";
 
-      // ---- configure for your system -------------------------------------
-      const API_BASE = "https://cablecast.example.org/cablecastapi";
-      const SITE_ID = 1;
-      const POLL_MS = 15000; // matches the 15s publicsitedata cache
-      // --------------------------------------------------------------------
+      // Which event to play: `?show=<showId>` from the gallery. With no param we
+      // fall back to the first live event, so this page still works standalone.
+      const wantedShowId = new URLSearchParams(location.search).get("show");
 
       const statusEl = document.getElementById("status");
+      const playerEl = document.getElementById("player");
       let player = null;
-
-      // `thumbnailUrl` is a path relative to the Cablecast host, so prefix it
-      // with the origin of API_BASE.
-      const apiOrigin = new URL(API_BASE).origin;
-      const absolute = (path) =>
-        path ? (path.startsWith("http") ? path : apiOrigin + path) : "";
 
       async function tick() {
         let config;
         try {
-          const res = await fetch(`${API_BASE}/publicsitedata?site=${SITE_ID}`);
+          const res = await fetch(publicSiteDataUrl());
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           config = await res.json();
         } catch (err) {
@@ -77,55 +73,60 @@
         }
 
         const shows = config.showcaseEventShows ?? [];
-        const live = shows.find((s) => getEventStatus(s) === "live");
+        const target = wantedShowId
+          ? shows.find((s) => String(s.showId) === wantedShowId)
+          : shows.find((s) => getEventStatus(s) === "live");
 
-        if (live) {
-          // The event is reported live, but confirm the manifest actually serves
-          // before handing it to video.js (see manifestReady below).
-          if (await manifestReady(live.vodUrl)) {
-            mount(live);
+        if (!target) {
+          statusEl.textContent = wantedShowId
+            ? "That event is not listed right now."
+            : "No live events right now.";
+          return setTimeout(tick, POLL_MS);
+        }
+
+        document.title = target.title ?? "Cablecast Live Event";
+        // Show the thumbnail as a poster while we wait for playback.
+        playerEl.poster = absolute(target.thumbnailUrl);
+
+        const status = getEventStatus(target);
+
+        // Live now, or an ended event whose recording (vodUrl) is still serving:
+        // both play `vodUrl`, so try to mount once the manifest is really ready.
+        if (status === "live" || status === "vod") {
+          if (target.vodUrl && (await manifestReady(target.vodUrl))) {
+            mount(
+              target,
+              status === "live" ? `Live now: ${target.title}` : `Recording: ${target.title}`
+            );
             // Stop polling once mounted: the HLS manifest keeps the stream current
             // on its own, and re-reading a cached response can briefly flip the
             // status and tear the player down.
             return;
           }
-          // Live but not serving segments yet — the encoder is coming up. Show a
-          // "starting soon" state and let the next poll re-check.
-          statusEl.textContent = `Starting soon: ${live.title}`;
+          statusEl.textContent =
+            status === "live"
+              ? `Starting soon: ${target.title}` // live, but manifest not serving yet
+              : `No recording available yet: ${target.title}`;
           return setTimeout(tick, POLL_MS);
         }
 
-        // Nothing on right now. Surface the next upcoming event, if any. Guard against
-        // a missing/invalid scheduleStartTime so the sort never compares NaN (which
-        // leaves order undefined) and we never render "Invalid Date".
-        const startMs = (s) => {
-          const t = new Date(s.scheduleStartTime).getTime();
-          return Number.isNaN(t) ? Infinity : t;
-        };
-        const upcoming = shows
-          .filter((s) => ["starting_soon", "upcoming"].includes(getEventStatus(s)))
-          .sort((a, b) => startMs(a) - startMs(b))[0];
-
-        const upcomingStart = upcoming ? startMs(upcoming) : Infinity;
-        statusEl.textContent = upcoming
-          ? Number.isFinite(upcomingStart)
-            ? `Next up: ${upcoming.title} at ${new Date(
-                upcomingStart
-              ).toLocaleString()}`
-            : `Next up: ${upcoming.title}`
-          : "No live events scheduled right now.";
-
+        // Not streaming yet (upcoming / starting soon): show when it starts and
+        // keep polling until it goes live.
+        const start = new Date(target.scheduleStartTime).getTime();
+        statusEl.textContent = Number.isNaN(start)
+          ? `Waiting for “${target.title}” to start…`
+          : `“${target.title}” starts ${new Date(start).toLocaleString()}`;
         setTimeout(tick, POLL_MS);
       }
 
-      function mount(show) {
-        statusEl.textContent = `Live now: ${show.title}`;
-        const el = document.getElementById("player");
-        el.poster = absolute(show.thumbnailUrl);
+      function mount(show, statusText) {
+        statusEl.textContent = statusText;
 
         // `vodUrl` carries the live EVENT playlist while the event is live, so
         // late joiners can scrub back to the start. Captions and translated
         // subtitle tracks ride inside the manifest — no separate fetch needed.
+        // liveui self-disables on a finalized (VOD) manifest, so it is safe to
+        // leave on for a recording too.
         player = videojs("player", {
           liveui: true,
           sources: [{ src: show.vodUrl, type: "application/x-mpegURL" }],

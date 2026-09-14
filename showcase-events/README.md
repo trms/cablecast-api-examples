@@ -79,10 +79,23 @@ examples reuse it (and `wordpress.php` ports it to PHP).
 
 | File | What it shows |
 |------|---------------|
+| [`config.mjs`](./config.mjs) | Shared API host/site config for the two browser pages — set your server here, once. |
 | [`event-status.mjs`](./event-status.mjs) | The status helper the other examples import. |
-| [`browser-player.html`](./browser-player.html) | Fetch `publicsitedata`, poll every 15s, mount an HLS player when an event goes live. |
+| [`events-gallery.html`](./events-gallery.html) | The landing page: a scrolling row of showcase events (live / starting soon / upcoming) that links into the player. |
+| [`browser-player.html`](./browser-player.html) | Opened as `?show=<showId>`: poll one event every 15s and mount an HLS player when it goes live (with a manifest pre-check). |
 | [`wordpress.php`](./wordpress.php) | A `[cablecast_live_events]` WordPress shortcode listing what's live and upcoming. |
 | [`iframe-embed.html`](./iframe-embed.html) | No-code option: iframe the Internet Channel show page and let it handle the whole lifecycle. |
+
+The two browser pages work together: **`events-gallery.html`** is the entry
+point, and clicking a card opens **`browser-player.html?show=<showId>`**. Set your
+API host once in `config.mjs`, then serve the folder over http(s) — the pages use
+ES-module imports and a cross-origin `fetch`, so `file://` won't work:
+
+```sh
+cd showcase-events
+python3 -m http.server 8000   # or: npx serve .
+# then open http://localhost:8000/events-gallery.html
+```
 
 ## Playback notes
 
