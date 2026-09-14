@@ -7,6 +7,14 @@
   event is live). While nothing is live it keeps polling on the same 15-second
   cadence the Cablecast Internet Channel uses.
 
+  An event can report `live` a beat before its encoder actually publishes
+  segments, and mounting video.js against a manifest that 404s gives a terminal
+  "media could not be played" error the viewer can only clear by refreshing. So
+  before mounting we do a lightweight pre-check that the manifest is really
+  serving something playable, and treat a not-yet-ready manifest as "starting
+  soon" — the 15-second poll doubles as the retry. (The hosted Cablecast player
+  runs a more elaborate version of this same check.)
+
   `publicsitedata` is read-only, needs no authentication, and sends open CORS
   headers, so this works straight from the browser. Serve this file over http(s)
   (not file://) so the ES-module import and the cross-origin fetch both work.
@@ -72,11 +80,19 @@
         const live = shows.find((s) => getEventStatus(s) === "live");
 
         if (live) {
-          mount(live);
-          // Stop polling once mounted: the HLS manifest keeps the stream current
-          // on its own, and re-reading a cached response can briefly flip the
-          // status and tear the player down.
-          return;
+          // The event is reported live, but confirm the manifest actually serves
+          // before handing it to video.js (see manifestReady below).
+          if (await manifestReady(live.vodUrl)) {
+            mount(live);
+            // Stop polling once mounted: the HLS manifest keeps the stream current
+            // on its own, and re-reading a cached response can briefly flip the
+            // status and tear the player down.
+            return;
+          }
+          // Live but not serving segments yet — the encoder is coming up. Show a
+          // "starting soon" state and let the next poll re-check.
+          statusEl.textContent = `Starting soon: ${live.title}`;
+          return setTimeout(tick, POLL_MS);
         }
 
         // Nothing on right now. Surface the next upcoming event, if any. Guard against
@@ -114,6 +130,79 @@
           liveui: true,
           sources: [{ src: show.vodUrl, type: "application/x-mpegURL" }],
         });
+
+        // Safety net for a transient manifest gap right at the start: rather than
+        // leaving the viewer on video.js's terminal error, clear it and re-load
+        // the same source shortly. The pre-check makes this rare; this just keeps
+        // a momentary blip from becoming a dead end.
+        player.on("error", () => {
+          statusEl.textContent = `Reconnecting: ${show.title}…`;
+          setTimeout(() => {
+            if (!player) return;
+            player.error(null);
+            player.src({ src: show.vodUrl, type: "application/x-mpegURL" });
+            player.play().catch(() => {});
+          }, 3000);
+        });
+      }
+
+      // ---- lightweight manifest pre-check ---------------------------------
+      // Confirm an HLS manifest is serving something playable before mounting.
+      // A trimmed-down version of the check the hosted Cablecast player runs: it
+      // follows a master playlist to its first variant once, which covers the
+      // case where the master is published (200) while its variant is still 404.
+      // Any failure — a 404, an error page, a network/CORS blip — reads the same:
+      // "not serving yet", so the caller keeps polling.
+
+      async function manifestReady(url) {
+        // A progressive (non-HLS) source has no manifest to wait for.
+        if (!url || !/\.m3u8(?:[?#]|$)/i.test(url)) return !!url;
+        try {
+          const playlist = await getPlaylist(url);
+          if (!playlist) return false;
+          if (!playlist.isMaster) return playlist.hasSegments;
+          // Master served. A master can go up before its variants exist, so
+          // follow the first variant one level and require a real segment there.
+          if (!playlist.firstVariant) return true; // can't parse a variant: fail open
+          const variantUrl = new URL(playlist.firstVariant, url).toString();
+          const variant = await getPlaylist(variantUrl);
+          if (!variant) return false;
+          return variant.isMaster ? true : variant.hasSegments;
+        } catch {
+          // Offline, an opaque cross-origin failure, a parse error: no signal,
+          // so treat it as "not serving yet" and let the next poll retry.
+          return false;
+        }
+      }
+
+      async function getPlaylist(url) {
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) return null;
+        // Everything we classify from lives in the first few hundred bytes; a
+        // finalized VOD playlist can be large, so only look at the head.
+        const text = (await res.text())
+          .slice(0, 4096)
+          .replace(/^﻿/, "") // strip a BOM some origins emit
+          .replace(/\r\n/g, "\n");
+        // Not an #EXTM3U body → an error page or app-shell HTML for a path that
+        // isn't published yet. That is the exact "not serving" signal.
+        if (!/^#EXTM3U/.test(text)) return null;
+        const lines = text.split("\n");
+        const masterIdx = lines.findIndex((l) =>
+          l.startsWith("#EXT-X-STREAM-INF:")
+        );
+        const isMaster = masterIdx !== -1;
+        // `#EXT-X-PART` covers LL-HLS, which can carry parts before the first
+        // full segment.
+        const hasSegments = /^(?:#EXTINF:|#EXT-X-PART:)/m.test(text);
+        // The variant URI is the first non-blank, non-comment line after the tag.
+        const firstVariant = isMaster
+          ? lines
+              .slice(masterIdx + 1)
+              .map((l) => l.trim())
+              .find((l) => l !== "" && !l.startsWith("#")) ?? null
+          : null;
+        return { isMaster, hasSegments, firstVariant };
       }
 
       tick();

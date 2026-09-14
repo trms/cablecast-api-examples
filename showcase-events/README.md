@@ -54,7 +54,7 @@ of it.
 
 | `showcaseEventStatus` | Meaning | Play `vodUrl`? |
 |-----------------------|---------|----------------|
-| `live` | Streaming now, and confirmed ready. `vodUrl` is the live EVENT playlist. | Yes |
+| `live` | Reported streaming now. `vodUrl` is the live EVENT playlist. | Yes — but pre-check the manifest (see Playback notes) |
 | `upcoming` | Scheduled, not streaming yet. Use `scheduleStartTime` for a countdown or a "starting soon" treatment. | No — keep polling |
 | `vod` | The event is over. | Only if a recording/VOD exists |
 
@@ -90,6 +90,15 @@ examples reuse it (and `wordpress.php` ports it to PHP).
   late joiners can scrub back to the start, and the same URL keeps serving the
   recording for a while after the event ends. Treat post-event playback as best
   effort and handle a failed load.
+- **Pre-check the manifest before mounting a player.** An event can report `live`
+  a beat before its encoder actually publishes segments, and mounting a player
+  against a manifest that 404s gives a terminal error the viewer can only clear
+  by refreshing. Before handing `vodUrl` to your player, confirm the manifest is
+  serving something playable — and if it isn't yet, show a "starting soon" state
+  and re-check on your next poll. `browser-player.html` has a small copy-pasteable
+  `manifestReady()` doing exactly this (fetch the `.m3u8`, require a real segment,
+  follow a master to its first variant once). The hosted Cablecast player and the
+  `iframe-embed.html` option already do this for you; a player *you* mount does not.
 - Turn on your player's live UI (in video.js, `liveui: true` with source type
   `application/x-mpegURL`) so the scrubber and "back to live" control appear.
 - Captions and translated subtitle tracks travel inside the manifest as subtitle
